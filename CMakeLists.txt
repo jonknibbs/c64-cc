@@ -18,7 +18,7 @@ else()
 endif()
 
 enable_testing()
-foreach(example arrays border colors control_flow expressions functions hello input optimization pointers sid_tone)
+foreach(example arrays border colors control_flow expressions functions hello input memory_screen memory_sid memory_sprite memory_variables optimization pointers sid_tone)
   add_test(
     NAME compile_${example}
     COMMAND c64cc
@@ -26,6 +26,16 @@ foreach(example arrays border colors control_flow expressions functions hello in
       -o ${CMAKE_CURRENT_BINARY_DIR}/${example}-test.prg
   )
 endforeach()
+
+add_test(
+  NAME verify_memory_variables
+  COMMAND ${CMAKE_COMMAND}
+    -DCOMPILER=$<TARGET_FILE:c64cc>
+    -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/examples/memory_variables.c
+    -DPRG=${CMAKE_CURRENT_BINARY_DIR}/memory-variables.prg
+    -DASM=${CMAKE_CURRENT_BINARY_DIR}/memory-variables.asm
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_memory_variables.cmake
+)
 
 add_test(
   NAME compile_c64_library

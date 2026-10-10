@@ -92,6 +92,24 @@ Array lengths are 1 through 255. Initializer lists and bounds checking are not i
 
 Local names follow block scope: nested blocks can shadow outer locals, and a `for`-initializer variable is only visible within its loop. Storage is still static: variables, parameters, arrays, and compiler temporaries do not use stack frames. Functions are therefore not reentrant or recursive. Initializers on local scalar variables are emitted as code at the declaration point. See [examples/scopes.c](examples/scopes.c).
 
+### Memory-Bound Variables
+
+Use `__mem(address)` before a file-scope byte variable or fixed-size array to bind its name to existing memory:
+
+```c
+__mem(0xD020) volatile unsigned char border_color;
+__mem(0x0400) volatile unsigned char screen_page[256];
+
+void main() {
+    border_color = 2;
+    screen_page[0] = 1;
+}
+```
+
+These declarations emit no data bytes into the PRG. Reads and writes compile to direct absolute-address instructions; indexed arrays use absolute,X. The current array index is 8-bit, so memory arrays may contain at most 256 bytes. For larger areas, declare multiple non-overlapping windows. `include/c64.h` provides `c64_screen_ram*` and `c64_color_ram*` windows plus common VIC-II, sprite, SID, and CIA registers. `volatile` is accepted as a qualifier; memory-bound accesses are always emitted as hardware accesses. See [examples/memory_variables.c](examples/memory_variables.c), [examples/memory_screen.c](examples/memory_screen.c), [examples/memory_sprite.c](examples/memory_sprite.c), and [examples/memory_sid.c](examples/memory_sid.c).
+
+`__mem` is different from [`__at`](#fixed-memory-placement): it aliases memory already present on the C64 and does not initialize it. The compiler does not reserve or initialize the bound region, so select addresses that are appropriate for the C64 memory map. `peek` and `poke` remain useful for one-off accesses to constant addresses.
+
 ### Fixed Memory Placement
 
 Use `__at(address)` immediately before a global object or function definition to choose its address:

@@ -56,6 +56,7 @@ Or load it in the emulator with `LOAD "BORDER.PRG",8,1` and `RUN`. On real hardw
 - `if`/`else`, dynamic `while` and `for` loops, `break`, `continue`, blocks, and `return`
 - Block-scoped locals with nested shadowing; `for`-initializer variables are scoped to their loop
 - `__at(0xADDRESS)` placement for global objects and function definitions, with compiler-owned overlap checks
+- `__mem(0xADDRESS)` bindings for direct scalar/array access to existing RAM and hardware registers
 - Fixed-size global and local byte arrays with variable-index reads and writes
 - 16-bit pointer variables initialized/assigned from constant addresses, with unary `*` reads and writes
 - Calls to user functions with byte arguments and returns; write prototypes before calls that pass arguments or use return values
@@ -96,6 +97,10 @@ ctest --test-dir build --output-on-failure
 | [examples/sprites.c](examples/sprites.c) | VIC-II sprite bitmap setup and movement |
 | [examples/scopes.c](examples/scopes.c) | Nested local scopes, shadowing, and loop-variable scope |
 | [examples/placement.c](examples/placement.c) | Explicit function and global-array placement |
+| [examples/memory_variables.c](examples/memory_variables.c) | Direct variables for C64 RAM and VIC-II registers |
+| [examples/memory_screen.c](examples/memory_screen.c) | Writes screen and color RAM through mapped arrays |
+| [examples/memory_sprite.c](examples/memory_sprite.c) | Builds and moves a sprite through mapped VIC-II registers |
+| [examples/memory_sid.c](examples/memory_sid.c) | Plays a SID tone through mapped sound registers |
 
 ```c
 // Turns the C64 border red, then loops forever.

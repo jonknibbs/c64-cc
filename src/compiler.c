@@ -18,10 +18,12 @@ typedef struct {
     char label[64];
     char high_label[64];
     size_t array_length;
+    unsigned int memory_address;
     int scope_id;
     int active;
     int is_array;
     int is_pointer;
+    int is_memory;
 } Symbol;
 
 typedef struct {
@@ -188,6 +190,33 @@ static void add_symbol_array(const char *name, int initial_value, size_t length,
     }
 }
 
+static void add_memory_symbol(const char *name, unsigned int address, size_t length, int is_array) {
+    if (symbol_in_current_scope(name) >= 0) die("duplicate variable declaration in this scope");
+    if (symbol_count >= MAX_SYMBOLS) die("too many variables");
+    if (!length || (unsigned long)address + length > 0x10000UL)
+        die("memory variable range exceeds the 6502 address space");
+    Symbol *symbol = &symbols[symbol_count++];
+    memset(symbol, 0, sizeof *symbol);
+    snprintf(symbol->name, sizeof symbol->name, "%s", name);
+    snprintf(symbol->function, sizeof symbol->function, "%s", current_function);
+    symbol->scope_id = current_scope;
+    symbol->active = 1;
+    symbol->is_memory = 1;
+    symbol->memory_address = address;
+    symbol->array_length = length;
+    symbol->is_array = is_array;
+}
+
+static void emit_symbol_load(const Symbol *symbol) {
+    if (symbol->is_memory) emit_op(OP_LDA, M_ABS, (int)symbol->memory_address);
+    else emit_op_label(OP_LDA, symbol->label);
+}
+
+static void emit_symbol_store(const Symbol *symbol) {
+    if (symbol->is_memory) emit_op(OP_STA, M_ABS, (int)symbol->memory_address);
+    else emit_op_label(OP_STA, symbol->label);
+}
+
 static void add_pointer_symbol(const char *name, unsigned int address, int has_origin, int origin) {
     if (symbol_in_current_scope(name) >= 0) die("duplicate variable declaration in this scope");
     if (symbol_count >= MAX_SYMBOLS) die("too many variables");
@@ -217,15 +246,18 @@ static void add_parameter_symbol(const char *name, const char *label) {
 }
 
 static int parse_byte_type(void) {
+    if (tok.kind == T_VOLATILE) advance();
     if (tok.kind == T_UNSIGNED) {
         advance();
         if (tok.kind != T_CHAR && tok.kind != T_INT)
             die("expected char or int after unsigned");
         advance();
+        if (tok.kind == T_VOLATILE) advance();
         return 1;
     }
     if (tok.kind == T_CHAR || tok.kind == T_INT) {
         advance();
+        if (tok.kind == T_VOLATILE) advance();
         return 1;
     }
     return 0;
@@ -308,11 +340,14 @@ static void parse_primary(void) {
             parse_expression();
             expect(T_RBRACKET, "']'");
             emit_op(OP_TAX, M_IMP, 0);
-            emit_op_indexed_label(OP_LDA, symbols[index].label);
+            if (symbols[index].is_memory)
+                emit_op(OP_LDA, M_ABSX, (int)symbols[index].memory_address);
+            else
+                emit_op_indexed_label(OP_LDA, symbols[index].label);
             return;
         }
         if (symbols[index].is_array) die("array must be indexed");
-        emit_op_label(OP_LDA, symbols[index].label);
+        emit_symbol_load(&symbols[index]);
         return;
     }
     die("expected an expression");
@@ -645,11 +680,11 @@ static void emit_for_clause(void) {
     if (tok.kind == T_ASSIGN) {
         advance();
         parse_expression();
-        emit_op_label(OP_STA, symbols[index].label);
+        emit_symbol_store(&symbols[index]);
     } else if (tok.kind == T_INC || tok.kind == T_DEC) {
         TokKind operation = tok.kind;
         advance();
-        emit_op_label(OP_LDA, symbols[index].label);
+        emit_symbol_load(&symbols[index]);
         if (operation == T_INC) {
             emit_op(OP_CLC, M_IMP, 0);
             emit_op(OP_ADC, M_IMM, 1);
@@ -657,7 +692,7 @@ static void emit_for_clause(void) {
             emit_op(OP_SEC, M_IMP, 0);
             emit_op(OP_SBC, M_IMM, 1);
         }
-        emit_op_label(OP_STA, symbols[index].label);
+        emit_symbol_store(&symbols[index]);
     } else {
         die("expected assignment or increment in for-loop clause");
     }
@@ -981,7 +1016,10 @@ static void parse_statement(void) {
             emit_op_label(OP_STA, saved_value);
             emit_op_label(OP_LDX, saved_index);
             emit_op_label(OP_LDA, saved_value);
-            emit_op_indexed_label(OP_STA, symbols[index].label);
+            if (symbols[index].is_memory)
+                emit_op(OP_STA, M_ABSX, (int)symbols[index].memory_address);
+            else
+                emit_op_indexed_label(OP_STA, symbols[index].label);
             expect(T_SEMI, "';'");
             break;
         }
@@ -989,12 +1027,12 @@ static void parse_statement(void) {
         if (tok.kind == T_ASSIGN) {
             advance();
             parse_expression();
-            emit_op_label(OP_STA, symbols[index].label);
+            emit_symbol_store(&symbols[index]);
             expect(T_SEMI, "';'");
         } else if (tok.kind == T_INC || tok.kind == T_DEC) {
             TokKind operation = tok.kind;
             advance();
-            emit_op_label(OP_LDA, symbols[index].label);
+            emit_symbol_load(&symbols[index]);
             if (operation == T_INC) {
                 emit_op(OP_CLC, M_IMP, 0);
                 emit_op(OP_ADC, M_IMM, 1);
@@ -1002,7 +1040,7 @@ static void parse_statement(void) {
                 emit_op(OP_SEC, M_IMP, 0);
                 emit_op(OP_SBC, M_IMM, 1);
             }
-            emit_op_label(OP_STA, symbols[index].label);
+            emit_symbol_store(&symbols[index]);
             expect(T_SEMI, "';'");
         } else {
             die("expected assignment or function call");
@@ -1183,6 +1221,34 @@ static void parse_function_call(const char *name, int want_value) {
     emit_op_label(OP_JSR, label);
 }
 
+static void parse_memory_declaration(void) {
+    advance();
+    expect(T_LPAREN, "'('");
+    long address = parse_const();
+    if (address < 0 || address > 0xFFFF) die("__mem address out of range (0..65535)");
+    expect(T_RPAREN, "')'");
+    if (!parse_byte_type()) die("expected byte type after __mem(address)");
+    if (tok.kind == T_STAR) die("__mem pointer declarations are not supported");
+    if (tok.kind != T_IDENT) die("expected memory variable name");
+    char name[64];
+    snprintf(name, sizeof name, "%s", tok.text);
+    advance();
+    size_t length = 1;
+    int is_array = 0;
+    if (tok.kind == T_LBRACKET) {
+        is_array = 1;
+        advance();
+        long array_length = parse_const();
+        if (array_length < 1 || array_length > 256)
+            die("__mem array length out of range (1..256)");
+        length = (size_t)array_length;
+        expect(T_RBRACKET, "']'");
+    }
+    if (tok.kind == T_ASSIGN) die("__mem declarations cannot have initializers");
+    expect(T_SEMI, "';'");
+    add_memory_symbol(name, (unsigned int)address, length, is_array);
+}
+
 void compile(const char *source) {
     emit_reset();
     emit_source_comments(source);
@@ -1204,6 +1270,10 @@ void compile(const char *source) {
     emit_op_label(OP_JMP, "halt");
 
     while (tok.kind != T_EOF) {
+        if (tok.kind == T_IDENT && !strcmp(tok.text, "__mem")) {
+            parse_memory_declaration();
+            continue;
+        }
         int has_origin = 0;
         int origin = 0;
         if (tok.kind == T_IDENT && !strcmp(tok.text, "__at")) {

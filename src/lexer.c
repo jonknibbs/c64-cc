@@ -60,6 +60,7 @@ Token lex_next(Lexer *lx) {
         else if (!strcmp(t.text, "char")) t.kind = T_CHAR;
         else if (!strcmp(t.text, "int")) t.kind = T_INT;
         else if (!strcmp(t.text, "unsigned")) t.kind = T_UNSIGNED;
+        else if (!strcmp(t.text, "volatile")) t.kind = T_VOLATILE;
         else if (!strcmp(t.text, "if")) t.kind = T_IF;
         else if (!strcmp(t.text, "else")) t.kind = T_ELSE;
         else if (!strcmp(t.text, "while")) t.kind = T_WHILE;

@@ -17,6 +17,7 @@
 ## 3. Memory and Arrays
 
 - [x] Add C-level fixed placement for global objects and functions with emitted-range overlap checks.
+- [x] Bind variables and byte arrays directly to existing C64 RAM/register addresses without emitting PRG storage.
 - Add pointer arithmetic and address-of expressions.
 - Support array-to-pointer conversion and array initializer lists.
 - Add runtime or optional bounds checking for arrays.

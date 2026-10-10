@@ -1,5 +1,5 @@
-#include "c64.h"
-#include "c64.h"
+#include "../include/c64_screen.h"
+#include "../include/c64_vic.h"
 
 void main() {
     unsigned char code = key();

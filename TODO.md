@@ -25,9 +25,10 @@
 
 ## 4. C64 Library
 
-- Move beyond compiler built-ins toward reusable helpers for screen output, keyboard scanning, VIC-II, and SID.
-- Keep hardware register addresses and helper declarations in `include/c64.h` or focused headers.
-- Document VIC bank, bitmap, sprite pointer table, and memory-layout assumptions.
+- [x] Move screen, keyboard/joystick, VIC-II/sprite, and SID helpers into focused C headers.
+- [x] Keep hardware register aliases in `include/c64.h` and helper implementations in focused headers.
+- [x] Document VIC bank, bitmap, sprite pointer table, and memory-layout assumptions.
+- [x] Add a keyboard matrix scanner and raster/frame/CIA Timer A helpers.
 
 ## 5. Preprocessing and Optimization
 

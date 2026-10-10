@@ -43,6 +43,18 @@ On Windows, if VICE is not on `PATH`, pass its executable explicitly, for exampl
 .\build\c64cc.exe examples\colors.c -o build\colors.prg --run --vice "C:\path\to\x64sc.exe"
 ```
 
+To build, write the `.asm` listing, and run an example with one command, pass its filename without the `.c` extension:
+
+```powershell
+.\run-example.ps1 memory_variables
+```
+
+The script looks for VICE at `x64sc.exe` in the project root, on `PATH`, or in `C64_VICE_PATH`. Override the executable with `-VicePath` when needed:
+
+```powershell
+.\run-example.ps1 memory_variables -VicePath "C:\path\to\x64sc.exe"
+```
+
 Or load it in the emulator with `LOAD "BORDER.PRG",8,1` and `RUN`. On real hardware, copy the `.prg` to a disk image or SD device.
 
 ## Supported language
@@ -61,9 +73,8 @@ Or load it in the emulator with `LOAD "BORDER.PRG",8,1` and `RUN`. On real hardw
 - 16-bit pointer variables initialized/assigned from constant addresses, with unary `*` reads and writes
 - Calls to user functions with byte arguments and returns; write prototypes before calls that pass arguments or use return values
 - `poke(constant_address, expression)` and `peek(constant_address)`
-- C64 helpers `set_border(expression)`, `set_background(expression)`, and `key()` (KERNAL `GETIN`)
-- Sprite helpers for enabling, positioning, coloring, selecting bitmap pointers, and writing bitmap data
-- Numeric object-like `#define` constants in included headers; `include/c64.h` names common VIC-II, screen, SID, and CIA locations
+- Reusable screen/keyboard-matrix, VIC-II/sprite/raster/timer, and SID C helpers in focused headers under `include/`
+- Numeric object-like `#define` constants and `__mem` aliases in `include/c64.h` for screen, VIC-II, SID, and CIA memory
 - `print(constant_address, "text")` writes supported characters as C64 screen codes
 - `//` and `/* */` comments
 - Quoted `#include "header.h"` and `#pragma once` for reusable declarations
@@ -91,6 +102,8 @@ ctest --test-dir build --output-on-failure
 | [examples/arrays.c](examples/arrays.c) | Global/local arrays and variable-index access |
 | [examples/control_flow.c](examples/control_flow.c) | Nested `for` loops, `continue`, and `break` |
 | [examples/input.c](examples/input.c) | KERNAL keyboard polling and VIC-II color helpers |
+| [examples/keyboard_matrix.c](examples/keyboard_matrix.c) | Scans the CIA1 8x8 keyboard matrix |
+| [examples/timing.c](examples/timing.c) | Raster waits and CIA1 Timer A |
 | [examples/pointers.c](examples/pointers.c) | Pointer reads/writes to C64 memory-mapped and screen memory |
 | [examples/optimization.c](examples/optimization.c) | Constant-folded byte expressions |
 | [examples/c64_library.c](examples/c64_library.c) | Reusable built-in declarations from `include/c64.h` |
@@ -101,6 +114,7 @@ ctest --test-dir build --output-on-failure
 | [examples/memory_screen.c](examples/memory_screen.c) | Writes screen and color RAM through mapped arrays |
 | [examples/memory_sprite.c](examples/memory_sprite.c) | Builds and moves a sprite through mapped VIC-II registers |
 | [examples/memory_sid.c](examples/memory_sid.c) | Plays a SID tone through mapped sound registers |
+| [examples/library_helpers.c](examples/library_helpers.c) | Uses the reusable screen, keyboard/joystick, sprite, and SID C helpers |
 
 ```c
 // Turns the C64 border red, then loops forever.

@@ -1,4 +1,4 @@
-#include "../include/c64.h"
+#include "../include/c64_vic.h"
 
 void main() {
     unsigned char offset = 0;

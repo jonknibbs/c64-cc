@@ -1,12 +1,10 @@
-#include "../include/c64.h"
+#include "../include/c64_sid.h"
 
 void main() {
-    c64_sid_registers[24] = 15;
-    c64_sid_registers[5] = 9;
-    c64_sid_registers[6] = 0xF0;
-    c64_sid_registers[1] = 0x1D;
-    c64_sid_registers[0] = 0xCF;
-    c64_sid_registers[4] = 0x11;
+    sid_set_volume(15);
+    sid_set_adsr(0, 9, 0xF0);
+    sid_set_frequency(0, 0xCF, 0x1D);
+    sid_set_control(0, 0x11);
     while (1) {
     }
 }

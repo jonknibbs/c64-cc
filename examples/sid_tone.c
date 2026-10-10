@@ -1,11 +1,11 @@
+#include "../include/c64_sid.h"
+
 // Plays a continuous triangle-wave note on SID voice 1 (about 440 Hz on PAL).
 void main() {
-    poke(0xD418, 15);   // master volume
-    poke(0xD405, 0x09); // attack/decay
-    poke(0xD406, 0xF0); // sustain/release
-    poke(0xD401, 0x1D); // frequency high byte
-    poke(0xD400, 0xCF); // frequency low byte
-    poke(0xD404, 0x11); // triangle waveform + gate on
+    sid_set_volume(15);
+    sid_set_adsr(0, 0x09, 0xF0);
+    sid_set_frequency(0, 0xCF, 0x1D);
+    sid_set_control(0, 0x11);
     while (1) {
     }
 }

@@ -318,7 +318,7 @@ static void parse_primary(void) {
             emit_op(OP_LDA, M_ABS, (int)address);
             return;
         }
-        if (!strcmp(name, "key") && tok.kind == T_LPAREN) {
+        if (!strcmp(name, "kernal_getin") && tok.kind == T_LPAREN) {
             advance();
             expect(T_RPAREN, "')'");
             emit_op(OP_JSR, M_ABS, 0xFFE4);
@@ -771,87 +771,6 @@ static void parse_call(const char *name) {
         parse_expression();
         if (address < 0 || address > 0xFFFF) die("poke address out of range (0..65535)");
         emit_op(OP_STA, M_ABS, (int)address);
-    } else if (!strcmp(name, "sprite_enable") || !strcmp(name, "sprite_x_msb") ||
-               !strcmp(name, "sprite_multicolor")) {
-        long sprite = parse_const();
-        if (sprite < 0 || sprite > 7) die("sprite number out of range (0..7)");
-        expect(T_COMMA, "','");
-        parse_expression();
-        expect(T_RPAREN, "')'");
-        expect(T_SEMI, "';'");
-        int reg = !strcmp(name, "sprite_enable") ? 0xD015 :
-                  !strcmp(name, "sprite_x_msb") ? 0xD010 : 0xD01C;
-        int mask = 1 << sprite;
-        char clear[32], done[32];
-        new_label(clear, sizeof clear);
-        new_label(done, sizeof done);
-        emit_op(OP_CMP, M_IMM, 0);
-        emit_op_label(OP_BEQ, clear);
-        emit_op(OP_LDA, M_ABS, reg);
-        emit_op(OP_ORA, M_IMM, mask);
-        emit_op(OP_STA, M_ABS, reg);
-        emit_op_label(OP_JMP, done);
-        emit_label(clear);
-        emit_op(OP_LDA, M_ABS, reg);
-        emit_op(OP_AND, M_IMM, 0xFF ^ mask);
-        emit_op(OP_STA, M_ABS, reg);
-        emit_label(done);
-        return;
-    } else if (!strcmp(name, "sprite_position")) {
-        long sprite = parse_const();
-        if (sprite < 0 || sprite > 7) die("sprite number out of range (0..7)");
-        expect(T_COMMA, "','");
-        parse_expression();
-        emit_op(OP_STA, M_ABS, 0xD000 + (int)sprite * 2);
-        expect(T_COMMA, "','");
-        parse_expression();
-        emit_op(OP_STA, M_ABS, 0xD001 + (int)sprite * 2);
-        expect(T_RPAREN, "')'");
-        expect(T_SEMI, "';'");
-        return;
-    } else if (!strcmp(name, "sprite_color") || !strcmp(name, "sprite_pointer")) {
-        long sprite = parse_const();
-        if (sprite < 0 || sprite > 7) die("sprite number out of range (0..7)");
-        expect(T_COMMA, "','");
-        parse_expression();
-        int address = !strcmp(name, "sprite_color") ? 0xD027 + (int)sprite : 0x07F8 + (int)sprite;
-        emit_op(OP_STA, M_ABS, address);
-        expect(T_RPAREN, "')'");
-        expect(T_SEMI, "';'");
-        return;
-    } else if (!strcmp(name, "sprite_bitmap_write")) {
-        char offset[64], value[64];
-        parse_expression();
-        new_temp(offset, sizeof offset);
-        emit_op_label(OP_STA, offset);
-        expect(T_COMMA, "','");
-        parse_expression();
-        new_temp(value, sizeof value);
-        emit_op_label(OP_STA, value);
-        expect(T_RPAREN, "')'");
-        expect(T_SEMI, "';'");
-        emit_op_label(OP_LDX, offset);
-        emit_op_label(OP_LDA, value);
-        emit_op(OP_STA, M_ABSX, 0x2000);
-        return;
-    } else if (!strcmp(name, "sprite_bitmap_clear")) {
-        expect(T_RPAREN, "')'");
-        expect(T_SEMI, "';'");
-        char loop[32];
-        new_label(loop, sizeof loop);
-        emit_op(OP_LDX, M_IMM, 0);
-        emit_op(OP_LDA, M_IMM, 0);
-        emit_label(loop);
-        emit_op(OP_STA, M_ABSX, 0x2000);
-        emit_op(OP_INX, M_IMP, 0);
-        emit_op(OP_TXA, M_IMP, 0);
-        emit_op(OP_CMP, M_IMM, 63);
-        emit_op_label(OP_BNE, loop);
-        return;
-    } else if ((!strcmp(name, "set_border") || !strcmp(name, "set_background")) &&
-               tok.kind != T_RPAREN) {
-        parse_expression();
-        emit_op(OP_STA, M_ABS, !strcmp(name, "set_border") ? 0xD020 : 0xD021);
     } else if (!strcmp(name, "print")) {
         long address = parse_const();
         expect(T_COMMA, "','");

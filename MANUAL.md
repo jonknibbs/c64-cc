@@ -167,24 +167,34 @@ Pointer arithmetic, taking addresses with `&`, and automatic array-to-pointer co
 
 The `peek(address)` and `poke(address, value)` helpers access a constant address. `poke` accepts an expression for its value. For an address held in a pointer variable, use `*pointer` instead.
 
-## 8. C64 Helpers
+## 8. C64 Library
 
-The common built-in declarations are in [include/c64.h](include/c64.h). Include it with `#include "c64.h"` and pass `-I include` when compiling from elsewhere. The compiler implements these calls directly; the header provides declarations, not separate runtime code. The `print` helper remains available as a compiler built-in but is not declared in this header.
+The C64 support is split into focused headers. [include/c64.h](include/c64.h) provides numeric addresses and `__mem` aliases only. Add the implementation header(s) you use; their helper functions are ordinary C definitions compiled into the program, not compiler-specific call cases. Project examples use source-relative includes; external projects can use `-I include`.
 
-The header also defines useful addresses, including `C64_SCREEN_RAM`, `C64_COLOR_RAM`, `C64_BORDER_COLOR`, `C64_BACKGROUND_COLOR`, `C64_VIC_RASTER`, `C64_VIC_SPRITE_ENABLE`, `C64_VIC_SPRITE_POINTERS`, `C64_SPRITE_BITMAP`, `C64_SID_BASE`, and the CIA base addresses.
-
-| Helper | Behavior |
+| Header | Contents |
 |---|---|
-| `set_border(value)` | Write a byte to VIC-II border color register `$D020` |
-| `set_background(value)` | Write a byte to VIC-II background color register `$D021` |
-| `key()` | Read a key through the KERNAL `GETIN` routine at `$FFE4`; returns zero when no key is available |
-| `print(address, "text")` | Write supported characters to screen memory as C64 screen codes |
+| `c64.h` | Screen/color RAM windows and VIC-II, sprite, SID, and CIA register aliases |
+| `c64_screen.h` | Screen/color writes, `key`, joystick port 2, and keyboard matrix scanning |
+| `c64_vic.h` | Sprite helpers, raster/frame waits, and CIA1 Timer A helpers |
+| `c64_sid.h` | SID volume, voice frequency, ADSR, and control helpers |
+
+The common addresses include `C64_SCREEN_RAM`, `C64_COLOR_RAM`, `C64_BORDER_COLOR`, `C64_BACKGROUND_COLOR`, `C64_VIC_RASTER`, `C64_VIC_SPRITE_ENABLE`, `C64_VIC_SPRITE_POINTERS`, `C64_SPRITE_BITMAP`, `C64_SID_BASE`, and the CIA base addresses. `peek(address)` and `poke(address, value)` remain compiler intrinsics for one-off constant-address accesses; `print(address, "text")` is still an intrinsic as well.
+
+`set_border(value)` and `set_background(value)` mask the value to the VIC-II four-bit color range. `screen_put(offset, code, color)` writes to the first 256-byte screen/color RAM windows; `screen_put_row0(column, code, color)` restricts the offset to the first 40 columns. The current byte index means larger screen areas are addressed through the explicit page aliases in `c64.h`.
+
+`key()` wraps the KERNAL `GETIN` call at `$FFE4` and returns zero when no key is available. `joystick_port2()` reads CIA1 port B and inverts its active-low bits. `keyboard_matrix_scan()` scans all 64 CIA1 keyboard intersections and returns the first pressed key in scan order as `row * 8 + column + 1`; zero means no key. It returns a matrix coordinate, not ASCII or a C64 key code. It temporarily configures CIA1 port A as output and port B as input, then restores their previous data and direction values. Simultaneous key presses, keyboard ghosting, and debounce handling are not resolved by this simple first-key scanner.
+
+`vic_wait_raster(line)` waits for the VIC-II raster register to equal a low-byte line value (0..255). `vic_wait_frame()` waits for a raster wrap near line 250, and `vic_wait_frames(count)` repeats that wait. These are frame-synchronized busy waits, not cycle-exact delays; PAL and NTSC frame rates differ.
+
+`cia1_timer_a_start(low, high)` loads and starts CIA1 Timer A in continuous mode. The latch is a 16-bit phi2-cycle count, so elapsed time depends on the machine's PAL/NTSC clock. `cia1_timer_a_read_high()` reads the counter's high byte; `cia1_timer_a_stop()` stops it. Keep this timer usage separate from other code that owns CIA1 Timer A.
+
+`print(address, "text")` writes supported characters to screen memory as C64 screen codes. It remains a compiler intrinsic.
 
 `print` maps letters to screen codes 1 through 26. Other accepted characters use their byte values for codes 32 through 63. For other hardware access, use `peek`, `poke`, or a pointer.
 
 ### Sprites
 
-The sprite helpers select sprite numbers as compile-time constants from 0 through 7:
+The sprite helper functions accept a sprite number from 0 through 7:
 
 | Helper | Behavior |
 |---|---|
@@ -195,9 +205,13 @@ The sprite helpers select sprite numbers as compile-time constants from 0 throug
 | `sprite_multicolor(sprite, enabled)` | Set or clear the sprite's multicolor bit in `$D01C` |
 | `sprite_pointer(sprite, pointer)` | Write the bitmap pointer in the default screen's pointer table at `$07F8` |
 | `sprite_bitmap_clear()` | Clear 63 bitmap bytes beginning at `$2000` |
-| `sprite_bitmap_write(offset, value)` | Write a byte at `$2000 + offset` using indexed addressing; keep offset in 0..62 |
+| `sprite_bitmap_write(offset, value)` | Write a byte at `$2000 + offset`; keep offset in 0..62 |
 
-The bitmap helpers assume VIC-II bank 0 and bitmap storage at `$2000`; `sprite_pointer(0, 0x80)` selects that address because each bitmap occupies 64 bytes. A sprite bitmap uses 63 bytes, with the final byte reserved. For X positions above 255, set the low coordinate with `sprite_position` and control its high bit separately with `sprite_x_msb`. See [examples/sprites.c](examples/sprites.c) for a complete moving sprite setup.
+The sprite helpers use memory-mapped aliases in `c64.h`. Bitmap helpers assume VIC-II bank 0, screen RAM at `$0400`, and bitmap storage at `$2000`; the pointer table is then at `$07F8`. `sprite_pointer(0, 0x80)` selects `$2000` because each bitmap occupies 64 bytes. A bitmap uses 63 data bytes; the final byte is reserved. The X coordinate's high bit is managed separately. No helper configures VIC bank or screen placement automatically. See [examples/memory_sprite.c](examples/memory_sprite.c) and [examples/sprites.c](examples/sprites.c).
+
+### SID
+
+`sid_set_volume` takes a four-bit volume. The voice helpers accept voice indices 0 through 2 and write the standard seven-register voice blocks beginning at `$D400`; frequency is supplied as low/high bytes. See [examples/memory_sid.c](examples/memory_sid.c) and [examples/sid_tone.c](examples/sid_tone.c).
 
 ## 9. Output and Tests
 
@@ -209,7 +223,9 @@ Compile the examples and run the optimization output check with:
 ctest --test-dir build --output-on-failure
 ```
 
-The [examples](examples) directory contains focused programs for expressions, functions, arrays, pointers, control flow, keyboard input, and optimization.
+The [examples](examples) directory contains focused programs for expressions, functions, arrays, pointers, control flow, screen memory, sprites, SID, and optimization.
+
+Keyboard and timing demonstrations: [examples/keyboard_matrix.c](examples/keyboard_matrix.c) and [examples/timing.c](examples/timing.c).
 
 ## 10. Current Boundaries
 

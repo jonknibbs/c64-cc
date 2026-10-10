@@ -57,8 +57,16 @@ Token lex_next(Lexer *lx) {
         t.text[n] = 0;
         t.kind = T_IDENT;
         if (!strcmp(t.text, "void")) t.kind = T_VOID;
+        else if (!strcmp(t.text, "char")) t.kind = T_CHAR;
+        else if (!strcmp(t.text, "int")) t.kind = T_INT;
+        else if (!strcmp(t.text, "unsigned")) t.kind = T_UNSIGNED;
+        else if (!strcmp(t.text, "if")) t.kind = T_IF;
+        else if (!strcmp(t.text, "else")) t.kind = T_ELSE;
         else if (!strcmp(t.text, "while")) t.kind = T_WHILE;
         else if (!strcmp(t.text, "return")) t.kind = T_RETURN;
+        else if (!strcmp(t.text, "for")) t.kind = T_FOR;
+        else if (!strcmp(t.text, "break")) t.kind = T_BREAK;
+        else if (!strcmp(t.text, "continue")) t.kind = T_CONTINUE;
         return t;
     }
 
@@ -90,8 +98,49 @@ Token lex_next(Lexer *lx) {
     case ')': t.kind = T_RPAREN; break;
     case '{': t.kind = T_LBRACE; break;
     case '}': t.kind = T_RBRACE; break;
+    case '[': t.kind = T_LBRACKET; break;
+    case ']': t.kind = T_RBRACKET; break;
     case ';': t.kind = T_SEMI; break;
     case ',': t.kind = T_COMMA; break;
+    case '+':
+        if (*lx->p == '+') { lx->p++; t.kind = T_INC; }
+        else t.kind = T_PLUS;
+        break;
+    case '-':
+        if (*lx->p == '-') { lx->p++; t.kind = T_DEC; }
+        else t.kind = T_MINUS;
+        break;
+    case '*': t.kind = T_STAR; break;
+    case '/': t.kind = T_SLASH; break;
+    case '%': t.kind = T_PERCENT; break;
+    case '&':
+        if (*lx->p == '&') { lx->p++; t.kind = T_AND_AND; }
+        else t.kind = T_AMP;
+        break;
+    case '|':
+        if (*lx->p == '|') { lx->p++; t.kind = T_OR_OR; }
+        else t.kind = T_PIPE;
+        break;
+    case '^': t.kind = T_CARET; break;
+    case '~': t.kind = T_TILDE; break;
+    case '!':
+        if (*lx->p == '=') { lx->p++; t.kind = T_NE; }
+        else t.kind = T_BANG;
+        break;
+    case '=':
+        if (*lx->p == '=') { lx->p++; t.kind = T_EQ; }
+        else t.kind = T_ASSIGN;
+        break;
+    case '<':
+        if (*lx->p == '=') { lx->p++; t.kind = T_LE; }
+        else if (*lx->p == '<') { lx->p++; t.kind = T_SHL; }
+        else t.kind = T_LT;
+        break;
+    case '>':
+        if (*lx->p == '=') { lx->p++; t.kind = T_GE; }
+        else if (*lx->p == '>') { lx->p++; t.kind = T_SHR; }
+        else t.kind = T_GT;
+        break;
     default: die(t.line, "unexpected character");
     }
     return t;

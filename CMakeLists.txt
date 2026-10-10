@@ -16,3 +16,25 @@ if(MSVC)
 else()
   target_compile_options(c64cc PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+enable_testing()
+foreach(example arrays border colors control_flow expressions functions hello input optimization pointers sid_tone)
+  add_test(
+    NAME compile_${example}
+    COMMAND c64cc
+      ${CMAKE_CURRENT_SOURCE_DIR}/examples/${example}.c
+      -o ${CMAKE_CURRENT_BINARY_DIR}/${example}-test.prg
+  )
+endforeach()
+
+add_test(NAME cli_help COMMAND c64cc --help)
+add_test(NAME cli_version COMMAND c64cc --version)
+add_test(
+  NAME optimize_constant_expressions
+  COMMAND ${CMAKE_COMMAND}
+    -DCOMPILER=$<TARGET_FILE:c64cc>
+    -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/examples/optimization.c
+    -DPRG=${CMAKE_CURRENT_BINARY_DIR}/optimization-check.prg
+    -DASM=${CMAKE_CURRENT_BINARY_DIR}/optimization-check.asm
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_optimization.cmake
+)

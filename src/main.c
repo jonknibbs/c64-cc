@@ -119,11 +119,31 @@ int main(int argc, char **argv) {
     int run = 0;
 
     for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "-o") && i + 1 < argc) prg = argv[++i];
-        else if (!strcmp(argv[i], "-S") && i + 1 < argc) asm_path = argv[++i];
+        if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
+            printf("usage: c64cc input.c [-o out.prg] [-S out.asm] [--run] [--vice path]\n"
+                   "       c64cc --version\n");
+            return 0;
+        } else if (!strcmp(argv[i], "--version")) {
+            puts("c64cc 0.2.0");
+            return 0;
+        } else if (!strcmp(argv[i], "-o") || !strcmp(argv[i], "-S") ||
+                   !strcmp(argv[i], "--vice")) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: %s requires a path\n", argv[i]);
+                return 2;
+            }
+            if (!strcmp(argv[i], "-o")) prg = argv[++i];
+            else if (!strcmp(argv[i], "-S")) asm_path = argv[++i];
+            else vice = argv[++i];
+        }
         else if (!strcmp(argv[i], "--run")) run = 1;
-        else if (!strcmp(argv[i], "--vice") && i + 1 < argc) vice = argv[++i];
-        else in = argv[i];
+        else if (argv[i][0] == '-') {
+            fprintf(stderr, "error: unknown option: %s\n", argv[i]);
+            return 2;
+        } else if (in) {
+            fprintf(stderr, "error: only one input file is supported\n");
+            return 2;
+        } else in = argv[i];
     }
     if (!in) {
         fprintf(stderr, "usage: c64cc input.c [-o out.prg] [-S out.asm] [--run] [--vice path]\n");

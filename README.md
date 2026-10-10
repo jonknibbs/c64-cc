@@ -46,16 +46,30 @@ Or load it in the emulator with `LOAD "BORDER.PRG",8,1` and `RUN`. On real hardw
 
 ## Supported language
 
-Current subset:
+`c64cc` implements a small, byte-oriented C dialect rather than full ISO C:
 
-- `void` functions with no parameters; `main` is the entry point
-- Blocks `{ ... }`, empty statements `;`, and `return;`
-- `while (constant) statement`
-- `poke(address, value);` with constant arguments (address 0..65535, value 0..255)
-- Calls to your own functions: `name();`
-- Integer constants (decimal or `0x` hex), plus `//` and `/* */` comments
+- `void` and byte-returning functions with up to 8 byte parameters; `main` is the entry point
+- Global and function-local `char`, `unsigned char`, and `int` variables; all are unsigned 8-bit values
+- Decimal and `0x` constants, assignment, `++`/`--`, unary `+`, `-`, `!`, `~`
+- `+`, `-`, `*`, `/`, `%`, shifts `<<`/`>>`, bitwise `&`, `|`, `^`, comparisons, and short-circuit `&&`/`||`
+- `if`/`else`, dynamic `while` and `for` loops, `break`, `continue`, blocks, and `return`
+- Fixed-size global and local byte arrays with variable-index reads and writes
+- 16-bit pointer variables initialized/assigned from constant addresses, with unary `*` reads and writes
+- Calls to user functions with byte arguments and returns; write prototypes before calls that pass arguments or use return values
+- `poke(constant_address, expression)` and `peek(constant_address)`
+- C64 helpers `set_border(expression)`, `set_background(expression)`, and `key()` (KERNAL `GETIN`)
+- `print(constant_address, "text")` writes supported characters as C64 screen codes
+- `//` and `/* */` comments
+- `c64cc --help` and `c64cc --version` for command-line discovery
+- Constant arithmetic and bitwise expressions are folded before output when the emitted pattern is safe to simplify
 
-Not yet supported: variables, expressions, `if`, parameters, return values.
+Variables, parameters, arrays, pointers, and expression temporaries currently have static storage, so locals are function-wide and functions are not reentrant or recursive. Array bounds are not checked at runtime. Pointers do not yet support arithmetic or array decay; their addresses must be constants. The compiler uses zero-page `$FB/$FC` as a scratch pointer while dereferencing. Addresses passed to `peek` and `poke` must be constants. Arithmetic wraps to 8 bits; division by zero produces zero for `/` and leaves the dividend for `%`.
+
+Run the compile smoke tests with:
+
+```powershell
+ctest --test-dir build --output-on-failure
+```
 
 ## Examples
 
@@ -65,6 +79,13 @@ Not yet supported: variables, expressions, `if`, parameters, return values.
 | [examples/hello.c](examples/hello.c) | Writes "HELLO C64" to screen RAM |
 | [examples/colors.c](examples/colors.c) | User-defined functions, including forward use |
 | [examples/sid_tone.c](examples/sid_tone.c) | Plays a continuous note on the SID chip |
+| [examples/expressions.c](examples/expressions.c) | Byte variables, all implemented operators, `peek`, and dynamic control flow |
+| [examples/functions.c](examples/functions.c) | Prototypes, byte parameters, function calls, and return values |
+| [examples/arrays.c](examples/arrays.c) | Global/local arrays and variable-index access |
+| [examples/control_flow.c](examples/control_flow.c) | Nested `for` loops, `continue`, and `break` |
+| [examples/input.c](examples/input.c) | KERNAL keyboard polling and VIC-II color helpers |
+| [examples/pointers.c](examples/pointers.c) | Pointer reads/writes to C64 memory-mapped and screen memory |
+| [examples/optimization.c](examples/optimization.c) | Constant-folded byte expressions |
 
 ```c
 // Turns the C64 border red, then loops forever.
@@ -87,3 +108,5 @@ The `.prg` loads at `$0801` with the BASIC line `10 SYS 2061`. Code starts at `$
 | `src/compiler.c` | Parser and code generator |
 | `src/emit.c` | Instruction list, assembly listing, and `.prg` encoder |
 | `src/main.c` | Command-line driver |
+
+For setup, language syntax, C64 helpers, examples, and current limitations, see the [c64cc Manual](MANUAL.md).

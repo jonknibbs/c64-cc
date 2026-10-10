@@ -90,7 +90,23 @@ void main() {
 
 Array lengths are 1 through 255. Initializer lists and bounds checking are not implemented.
 
-Variables, parameters, arrays, and compiler temporaries use static storage. Local variables therefore have function-wide storage rather than block scope, and functions are not reentrant or recursive. Initializers on local scalar variables are emitted as code at the declaration point.
+Local names follow block scope: nested blocks can shadow outer locals, and a `for`-initializer variable is only visible within its loop. Storage is still static: variables, parameters, arrays, and compiler temporaries do not use stack frames. Functions are therefore not reentrant or recursive. Initializers on local scalar variables are emitted as code at the declaration point. See [examples/scopes.c](examples/scopes.c).
+
+### Fixed Memory Placement
+
+Use `__at(address)` immediately before a global object or function definition to choose its address:
+
+```c
+__at(0x2000) unsigned char sprite_data[63];
+
+__at(0x1000) void set_color() {
+    set_border(2);
+}
+```
+
+Unannotated code and data continue from the current automatic location. One object is allowed per placed global declaration. Function prototypes cannot carry `__at`; put the attribute on the definition. Placed addresses must be `$080D` or higher because `$0801-$080C` contains the PRG's BASIC loader stub.
+
+The PRG format is contiguous, so gaps before placed regions are zero-filled. The compiler rejects intersections among emitted code/data regions and with the BASIC stub, reporting the first conflicting address. These checks only cover memory occupied by this compilation; they do not know about memory used by the C64 ROM, hardware, another program, or regions your program reserves for its own purposes. Large gaps also make the PRG larger and will overwrite the gap when loaded. Choose addresses with the C64 memory map in mind. See [examples/placement.c](examples/placement.c).
 
 ## 5. Expressions
 
@@ -167,7 +183,7 @@ The bitmap helpers assume VIC-II bank 0 and bitmap storage at `$2000`; `sprite_p
 
 ## 9. Output and Tests
 
-The generated PRG loads at `$0801`. Its BASIC stub calls the machine code at `$080D` (`SYS 2061`); the startup code calls `main` and then parks the CPU. The compiler rejects output that exceeds the 6502 address space.
+The generated PRG loads at `$0801`. Its BASIC stub calls the machine code at `$080D` (`SYS 2061`); the startup code calls `main` and then parks the CPU. `__at` can place code/data later in the address space; the encoder pads the single PRG image across gaps and rejects overlaps or output beyond the 6502 address space.
 
 Compile the examples and run the optimization output check with:
 
@@ -179,4 +195,4 @@ The [examples](examples) directory contains focused programs for expressions, fu
 
 ## 10. Current Boundaries
 
-This is a subset of C. It does not implement a general preprocessor, local stack frames, recursion, signed arithmetic, 16-bit integer arithmetic, pointer arithmetic, dynamic addresses for `peek`/`poke`, array initialization, or runtime array bounds checks. Preprocessing is limited to quoted `#include`, `#pragma once`, and numeric object-like `#define`. Unsupported syntax is reported as a compile error.
+This is a subset of C. It does not implement a general preprocessor, stack-based local frames, recursion, reentrant calls, signed arithmetic, 16-bit integer arithmetic, pointer arithmetic, dynamic addresses for `peek`/`poke`, array initialization, or runtime array bounds checks. Placement is limited to global objects and function definitions at or above `$080D`; automatic layout and system/hardware memory reservations are not modeled. Preprocessing is limited to quoted `#include`, `#pragma once`, and numeric object-like `#define`. Unsupported syntax is reported as a compile error.

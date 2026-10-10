@@ -14,6 +14,7 @@ typedef enum { M_IMP, M_IMM, M_ABS, M_ABSX, M_INDY } Mode;
 void emit_reset(void);
 void emit_label(const char *name);
 void emit_function_label(const char *label, const char *name);
+void emit_origin(int address);
 void emit_source_comments(const char *source);
 void emit_op(Op op, Mode mode, int value);
 void emit_op_label(Op op, const char *target);

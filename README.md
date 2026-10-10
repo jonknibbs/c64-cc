@@ -54,6 +54,8 @@ Or load it in the emulator with `LOAD "BORDER.PRG",8,1` and `RUN`. On real hardw
 - Decimal and `0x` constants, assignment, `++`/`--`, unary `+`, `-`, `!`, `~`
 - `+`, `-`, `*`, `/`, `%`, shifts `<<`/`>>`, bitwise `&`, `|`, `^`, comparisons, and short-circuit `&&`/`||`
 - `if`/`else`, dynamic `while` and `for` loops, `break`, `continue`, blocks, and `return`
+- Block-scoped locals with nested shadowing; `for`-initializer variables are scoped to their loop
+- `__at(0xADDRESS)` placement for global objects and function definitions, with compiler-owned overlap checks
 - Fixed-size global and local byte arrays with variable-index reads and writes
 - 16-bit pointer variables initialized/assigned from constant addresses, with unary `*` reads and writes
 - Calls to user functions with byte arguments and returns; write prototypes before calls that pass arguments or use return values
@@ -67,7 +69,7 @@ Or load it in the emulator with `LOAD "BORDER.PRG",8,1` and `RUN`. On real hardw
 - `c64cc --help` and `c64cc --version` for command-line discovery
 - Constant arithmetic and bitwise expressions are folded before output when the emitted pattern is safe to simplify
 
-Variables, parameters, arrays, pointers, and expression temporaries currently have static storage, so locals are function-wide and functions are not reentrant or recursive. Array bounds are not checked at runtime. Pointers do not yet support arithmetic or array decay; their addresses must be constants. The compiler uses zero-page `$FB/$FC` as a scratch pointer while dereferencing. Addresses passed to `peek` and `poke` must be constants. Arithmetic wraps to 8 bits; division by zero produces zero for `/` and leaves the dividend for `%`.
+Variables, parameters, arrays, pointers, and expression temporaries currently have static storage despite lexical scope, so functions are not reentrant or recursive. Array bounds are not checked at runtime. Pointers do not yet support arithmetic or array decay; their addresses must be constants. The compiler uses zero-page `$FB/$FC` as a scratch pointer while dereferencing. Addresses passed to `peek` and `poke` must be constants. Arithmetic wraps to 8 bits; division by zero produces zero for `/` and leaves the dividend for `%`.
 
 Run the compile smoke tests with:
 
@@ -92,6 +94,8 @@ ctest --test-dir build --output-on-failure
 | [examples/optimization.c](examples/optimization.c) | Constant-folded byte expressions |
 | [examples/c64_library.c](examples/c64_library.c) | Reusable built-in declarations from `include/c64.h` |
 | [examples/sprites.c](examples/sprites.c) | VIC-II sprite bitmap setup and movement |
+| [examples/scopes.c](examples/scopes.c) | Nested local scopes, shadowing, and loop-variable scope |
+| [examples/placement.c](examples/placement.c) | Explicit function and global-array placement |
 
 ```c
 // Turns the C64 border red, then loops forever.
@@ -116,3 +120,4 @@ The `.prg` loads at `$0801` with the BASIC line `10 SYS 2061`. Code starts at `$
 | `src/main.c` | Command-line driver |
 
 For setup, language syntax, C64 helpers, examples, and current limitations, see the [c64cc Manual](MANUAL.md).
+Remaining development priorities are tracked in [TODO.md](TODO.md).

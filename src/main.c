@@ -317,14 +317,35 @@ static FILE *open_out(const char *path) {
 
 static int run_emulator(const char *vice, const char *prg) {
 #ifdef _WIN32
-    size_t vice_len = strlen(vice), prg_len = strlen(prg);
+    HANDLE vice_file = CreateFileA(vice, FILE_READ_ATTRIBUTES,
+                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                   NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (vice_file == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "error: could not open VICE executable (%s), Windows error %lu\n",
+                vice, (unsigned long)GetLastError());
+        return 1;
+    }
+    char real_vice[32768];
+    DWORD real_vice_len = GetFinalPathNameByHandleA(vice_file, real_vice,
+                                                     sizeof(real_vice), FILE_NAME_NORMALIZED);
+    CloseHandle(vice_file);
+    if (real_vice_len == 0 || real_vice_len >= sizeof(real_vice)) {
+        fprintf(stderr, "error: could not resolve VICE executable path\n");
+        return 1;
+    }
+    if (strncmp(real_vice, "\\\\?\\", 4) == 0) {
+        memmove(real_vice, real_vice + 4, real_vice_len - 3);
+        real_vice_len -= 4;
+    }
+
+    size_t vice_len = strlen(real_vice), prg_len = strlen(prg);
     char *command = malloc(2 * (vice_len + prg_len) + 24);
     if (!command) {
         fprintf(stderr, "error: out of memory while starting VICE\n");
         return 1;
     }
     char *p = command;
-    const char *args[] = {vice, "-autostart", prg};
+    const char *args[] = {real_vice, "-autostart", prg};
     for (size_t arg = 0; arg < 3; arg++) {
         const char *s = args[arg];
         *p++ = '"';
@@ -352,7 +373,7 @@ static int run_emulator(const char *vice, const char *prg) {
     STARTUPINFOA startup = {0};
     PROCESS_INFORMATION process = {0};
     startup.cb = sizeof(startup);
-    if (!CreateProcessA(NULL, command, NULL, NULL, FALSE, 0, NULL, NULL,
+    if (!CreateProcessA(real_vice, command, NULL, NULL, FALSE, 0, NULL, NULL,
                         &startup, &process)) {
         fprintf(stderr, "error: could not start VICE (%s), Windows error %lu\n",
                 vice, (unsigned long)GetLastError());

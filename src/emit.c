@@ -54,6 +54,7 @@ typedef struct {
     char function_name[64];
     int is_label;
     int is_function;
+    int is_origin;
     Op op;
     Mode mode;
     int value;
@@ -101,6 +102,14 @@ void emit_function_label(const char *label, const char *name) {
     it->is_function = 1;
     snprintf(it->label, sizeof it->label, "%s", label);
     snprintf(it->function_name, sizeof it->function_name, "%s", name);
+}
+
+void emit_origin(int address) {
+    if (address < CODE_ADDR || address > 0xFFFF)
+        die("placed region address must be between $080D and $FFFF", NULL);
+    Item *it = push();
+    it->is_origin = 1;
+    it->value = address;
 }
 
 static void save_source_comment(const char *start, size_t length) {
@@ -257,6 +266,7 @@ void emit_optimize(void) {
 }
 
 static int item_size(const Item *it) {
+    if (it->is_origin) return 0;
     if (it->is_label) return 0;
     if (it->is_data) return 1;
     if (BRANCH_OPCODE[it->op]) return it->long_branch ? 5 : 2;
@@ -277,11 +287,22 @@ static int *layout(void) {
     int changed;
     do {
         int pc = CODE_ADDR;
+        int high_water = CODE_ADDR;
+        int explicit_origin_pending = 0;
         changed = 0;
         for (size_t i = 0; i < count; i++) {
+            if (items[i].is_origin) {
+                pc = items[i].value;
+                explicit_origin_pending = 1;
+            } else if (!explicit_origin_pending && pc < high_water) {
+                pc = high_water;
+            }
             addr[i] = pc;
-            pc += item_size(&items[i]);
+            int size = item_size(&items[i]);
+            pc += size;
             if (pc > 0x10000) die("program exceeds the 6502 address space", NULL);
+            if (pc > high_water) high_water = pc;
+            if (size) explicit_origin_pending = 0;
         }
         addr[count] = pc;
         for (size_t i = 0; i < count; i++) {
@@ -295,6 +316,32 @@ static int *layout(void) {
             }
         }
     } while (changed);
+
+    const char **owners = calloc(0x10000, sizeof *owners);
+    if (!owners) die("out of memory", NULL);
+    for (int address = LOAD_ADDR; address < CODE_ADDR; address++)
+        owners[address] = "BASIC SYS stub";
+    const char *owner = "startup code";
+    for (size_t i = 0; i < count; i++) {
+        const Item *it = &items[i];
+        if (it->is_origin) continue;
+        if (it->is_function) owner = it->function_name;
+        if (it->is_data) owner = it->label;
+        int size = item_size(it);
+        for (int offset = 0; offset < size; offset++) {
+            int address = addr[i] + offset;
+            if (owners[address]) {
+                fprintf(stderr, "error: memory overlap at $%04X between '%s' and '%s'\n",
+                        address, owners[address], owner);
+                free(owners);
+                free(addr);
+                exit(1);
+            }
+            owners[address] = owner;
+        }
+    }
+    free(owners);
+
     for (size_t i = 0; i < count; i++) {
         if (!items[i].is_label && !items[i].is_data) continue;
         const char *name = items[i].is_data ? items[i].label : items[i].label;
@@ -321,7 +368,9 @@ void emit_write_asm(FILE *f) {
     if (source_comment_count) fputc('\n', f);
     for (size_t i = 0; i < count; i++) {
         const Item *it = &items[i];
-        if (it->is_label) {
+        if (it->is_origin) {
+            fprintf(f, "*= $%04X\n", it->value);
+        } else if (it->is_label) {
             if (it->is_function) fprintf(f, "; function: %s\n", it->function_name);
             fprintf(f, "%s:\n", it->label);
         } else if (it->is_data) {
@@ -348,21 +397,30 @@ void emit_write_asm(FILE *f) {
     }
 }
 
+static void image_byte(uint8_t *image, int address, int value, int *high_address) {
+    image[address] = (uint8_t)value;
+    if (address > *high_address) *high_address = address;
+}
+
 void emit_write_prg(FILE *f) {
     int *addr = layout();
+    uint8_t *image = calloc(0x10000, sizeof *image);
+    if (!image) die("out of memory", NULL);
 
-    /* 2-byte load address, then a BASIC line: 10 SYS 2061 */
+    /* The PRG load address is written separately; its payload begins with the BASIC line. */
     static const uint8_t header[] = {
         LOAD_ADDR & 0xFF, LOAD_ADDR >> 8,
         0x0B, 0x08, 0x0A, 0x00, 0x9E, '2', '0', '6', '1', 0x00, 0x00, 0x00,
     };
-    fwrite(header, 1, sizeof header, f);
+    memcpy(image + LOAD_ADDR, header + 2, sizeof header - 2);
+    int high_address = CODE_ADDR - 1;
 
     for (size_t i = 0; i < count; i++) {
         const Item *it = &items[i];
-        if (it->is_label) continue;
+        if (it->is_label || it->is_origin) continue;
+        int pc = addr[i];
         if (it->is_data) {
-            fputc(it->value, f);
+            image_byte(image, pc, it->value, &high_address);
             continue;
         }
 
@@ -373,27 +431,30 @@ void emit_write_prg(FILE *f) {
         }
         if (BRANCH_OPCODE[it->op]) {
             if (it->long_branch) {
-                fputc(BRANCH_OPCODE[INVERSE_BRANCH[it->op]], f);
-                fputc(3, f);
-                fputc(0x4C, f);
-                fputc(value & 0xFF, f);
-                fputc((value >> 8) & 0xFF, f);
+                image_byte(image, pc++, BRANCH_OPCODE[INVERSE_BRANCH[it->op]], &high_address);
+                image_byte(image, pc++, 3, &high_address);
+                image_byte(image, pc++, 0x4C, &high_address);
+                image_byte(image, pc++, value & 0xFF, &high_address);
+                image_byte(image, pc, (value >> 8) & 0xFF, &high_address);
             } else {
                 int offset = value - (addr[i] + 2);
-                fputc(BRANCH_OPCODE[it->op], f);
-                fputc(offset & 0xFF, f);
+                image_byte(image, pc++, BRANCH_OPCODE[it->op], &high_address);
+                image_byte(image, pc, offset & 0xFF, &high_address);
             }
             continue;
         }
-        fputc(OPS[it->op].opcode[it->mode], f);
-        if (it->mode == M_IMM) {
-            fputc(value & 0xFF, f);
-        } else if (it->mode == M_INDY) {
-            fputc(value & 0xFF, f);
+        image_byte(image, pc++, OPS[it->op].opcode[it->mode], &high_address);
+        if (it->mode == M_IMM || it->mode == M_INDY) {
+            image_byte(image, pc, value & 0xFF, &high_address);
         } else if (it->mode == M_ABS || it->mode == M_ABSX) {
-            fputc(value & 0xFF, f);
-            fputc((value >> 8) & 0xFF, f);
+            image_byte(image, pc++, value & 0xFF, &high_address);
+            image_byte(image, pc, (value >> 8) & 0xFF, &high_address);
         }
     }
+
+    fputc(LOAD_ADDR & 0xFF, f);
+    fputc((LOAD_ADDR >> 8) & 0xFF, f);
+    fwrite(image + LOAD_ADDR, 1, (size_t)(high_address - LOAD_ADDR + 1), f);
+    free(image);
     free(addr);
 }

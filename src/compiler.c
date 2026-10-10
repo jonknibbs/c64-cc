@@ -18,13 +18,22 @@ typedef struct {
     char label[64];
     char high_label[64];
     size_t array_length;
+    int scope_id;
+    int active;
     int is_array;
     int is_pointer;
 } Symbol;
 
 typedef struct {
+    int parent;
+    size_t symbol_start;
+} Scope;
+
+typedef struct {
     char label[64];
     int value;
+    int has_origin;
+    int origin;
 } Slot;
 
 typedef struct {
@@ -48,11 +57,13 @@ static Symbol symbols[MAX_SYMBOLS];
 static Slot slots[MAX_SLOTS];
 static Function functions[MAX_FUNCTIONS];
 static LoopContext loops[32];
-static size_t symbol_count, slot_count, function_count;
+static Scope scopes[MAX_SYMBOLS];
+static size_t symbol_count, slot_count, function_count, scope_count;
 static size_t loop_depth;
 static int label_counter, temp_counter, symbol_counter;
 static int array_counter;
 static int pointer_counter;
+static int current_scope;
 static char current_function[64];
 
 static void die(const char *msg) {
@@ -84,10 +95,17 @@ static void new_label(char *buf, size_t n) {
     snprintf(buf, n, ".L%d", label_counter++);
 }
 
-static void add_slot(const char *label, int value) {
+static void add_slot_at(const char *label, int value, int has_origin, int origin) {
     if (slot_count >= MAX_SLOTS) die("too many variables or temporaries");
     snprintf(slots[slot_count].label, sizeof slots[slot_count].label, "%s", label);
-    slots[slot_count++].value = value & 0xFF;
+    slots[slot_count].value = value & 0xFF;
+    slots[slot_count].has_origin = has_origin;
+    slots[slot_count].origin = origin;
+    slot_count++;
+}
+
+static void add_slot(const char *label, int value) {
+    add_slot_at(label, value, 0, 0);
 }
 
 static void new_temp(char *buf, size_t n) {
@@ -95,12 +113,36 @@ static void new_temp(char *buf, size_t n) {
     add_slot(buf, 0);
 }
 
+static void enter_scope(void) {
+    if (scope_count >= sizeof scopes / sizeof scopes[0]) die("too many lexical scopes");
+    int id = (int)scope_count++;
+    scopes[id].parent = current_scope;
+    scopes[id].symbol_start = symbol_count;
+    current_scope = id;
+}
+
+static void leave_scope(void) {
+    size_t start = scopes[current_scope].symbol_start;
+    for (size_t i = start; i < symbol_count; i++) symbols[i].active = 0;
+    current_scope = scopes[current_scope].parent;
+}
+
+static int symbol_in_current_scope(const char *name) {
+    for (size_t i = symbol_count; i > 0; i--) {
+        Symbol *symbol = &symbols[i - 1];
+        if (symbol->active && symbol->scope_id == current_scope && !strcmp(symbol->name, name))
+            return (int)(i - 1);
+    }
+    return -1;
+}
+
 static int find_symbol(const char *name) {
     for (size_t i = symbol_count; i > 0; i--) {
         Symbol *symbol = &symbols[i - 1];
-        if (!strcmp(symbol->name, name) &&
+        if (symbol->active && !strcmp(symbol->name, name) &&
             (!symbol->function[0] || !strcmp(symbol->function, current_function)))
-            return (int)(i - 1);
+            for (int scope = current_scope; scope >= 0; scope = scopes[scope].parent)
+                if (symbol->scope_id == scope) return (int)(i - 1);
     }
     return -1;
 }
@@ -121,20 +163,23 @@ static int get_function(const char *name) {
     return index;
 }
 
-static void add_symbol_array(const char *name, int initial_value, size_t length, int is_array) {
-    if (find_symbol(name) >= 0) die("duplicate variable declaration");
+static void add_symbol_array(const char *name, int initial_value, size_t length, int is_array,
+                             int has_origin, int origin) {
+    if (symbol_in_current_scope(name) >= 0) die("duplicate variable declaration in this scope");
     if (symbol_count >= MAX_SYMBOLS) die("too many variables");
     Symbol *symbol = &symbols[symbol_count++];
     memset(symbol, 0, sizeof *symbol);
     snprintf(symbol->name, sizeof symbol->name, "%s", name);
     snprintf(symbol->function, sizeof symbol->function, "%s", current_function);
+    symbol->scope_id = current_scope;
+    symbol->active = 1;
     if (current_function[0])
         snprintf(symbol->label, sizeof symbol->label, "v_%d_%s", symbol_counter++, name);
     else
         snprintf(symbol->label, sizeof symbol->label, "g_%s", name);
     symbol->array_length = length;
     symbol->is_array = is_array;
-    add_slot(symbol->label, initial_value);
+    add_slot_at(symbol->label, initial_value, has_origin, origin);
     int array_id = array_counter++;
     for (size_t i = 1; i < length; i++) {
         char element_label[64];
@@ -143,28 +188,32 @@ static void add_symbol_array(const char *name, int initial_value, size_t length,
     }
 }
 
-static void add_pointer_symbol(const char *name, unsigned int address) {
-    if (find_symbol(name) >= 0) die("duplicate variable declaration");
+static void add_pointer_symbol(const char *name, unsigned int address, int has_origin, int origin) {
+    if (symbol_in_current_scope(name) >= 0) die("duplicate variable declaration in this scope");
     if (symbol_count >= MAX_SYMBOLS) die("too many variables");
     Symbol *symbol = &symbols[symbol_count++];
     memset(symbol, 0, sizeof *symbol);
     snprintf(symbol->name, sizeof symbol->name, "%s", name);
     snprintf(symbol->function, sizeof symbol->function, "%s", current_function);
+    symbol->scope_id = current_scope;
+    symbol->active = 1;
     int id = pointer_counter++;
     snprintf(symbol->label, sizeof symbol->label, "ptr_%d_lo", id);
     snprintf(symbol->high_label, sizeof symbol->high_label, "ptr_%d_hi", id);
     symbol->is_pointer = 1;
-    add_slot(symbol->label, address & 0xFF);
+    add_slot_at(symbol->label, address & 0xFF, has_origin, origin);
     add_slot(symbol->high_label, address >> 8);
 }
 
 static void add_parameter_symbol(const char *name, const char *label) {
-    if (find_symbol(name) >= 0) die("duplicate parameter or local variable");
+    if (symbol_in_current_scope(name) >= 0) die("duplicate parameter or local variable");
     if (symbol_count >= MAX_SYMBOLS) die("too many variables");
     Symbol *symbol = &symbols[symbol_count++];
     snprintf(symbol->name, sizeof symbol->name, "%s", name);
     snprintf(symbol->function, sizeof symbol->function, "%s", current_function);
     snprintf(symbol->label, sizeof symbol->label, "%s", label);
+    symbol->scope_id = current_scope;
+    symbol->active = 1;
 }
 
 static int parse_byte_type(void) {
@@ -194,7 +243,7 @@ static void emit_pointer_setup(const Symbol *symbol) {
     emit_op(OP_STA, M_ABS, 0xFC);
 }
 
-static void parse_block(void) {
+static void parse_block_contents(void) {
     expect(T_LBRACE, "'{'");
     while (tok.kind != T_RBRACE) {
         if (tok.kind == T_EOF) die("unexpected end of file, missing '}'");
@@ -204,6 +253,12 @@ static void parse_block(void) {
             parse_statement();
     }
     advance();
+}
+
+static void parse_block(void) {
+    enter_scope();
+    parse_block_contents();
+    leave_scope();
 }
 
 static void parse_primary(void) {
@@ -611,6 +666,7 @@ static void emit_for_clause(void) {
 static void parse_for(void) {
     advance();
     expect(T_LPAREN, "'('");
+    enter_scope();
     if (tok.kind == T_CHAR || tok.kind == T_INT || tok.kind == T_UNSIGNED)
         parse_local_declaration();
     else if (tok.kind == T_SEMI)
@@ -647,6 +703,7 @@ static void parse_for(void) {
     loop_depth--;
     emit_op_label(OP_JMP, update);
     emit_label(done);
+    leave_scope();
 }
 
 static void parse_if(void) {
@@ -796,7 +853,7 @@ static void parse_local_declaration(void) {
         snprintf(name, sizeof name, "%s", tok.text);
         advance();
         if (is_pointer) {
-            add_pointer_symbol(name, 0);
+            add_pointer_symbol(name, 0, 0, 0);
             int index = (int)symbol_count - 1;
             if (tok.kind == T_ASSIGN) {
                 advance();
@@ -821,7 +878,7 @@ static void parse_local_declaration(void) {
             array_length = (size_t)length;
             expect(T_RBRACKET, "']'");
         }
-        add_symbol_array(name, 0, array_length, is_array);
+        add_symbol_array(name, 0, array_length, is_array, 0, 0);
         int index = (int)symbol_count - 1;
         if (tok.kind == T_ASSIGN) {
             if (is_array) die("array initialization is not supported");
@@ -957,7 +1014,7 @@ static void parse_statement(void) {
     }
 }
 
-static void parse_global_declaration(void) {
+static void parse_global_declaration(int has_origin, int origin) {
     parse_byte_type();
     do {
         int is_pointer = tok.kind == T_STAR;
@@ -974,7 +1031,9 @@ static void parse_global_declaration(void) {
                 if (value < 0 || value > 0xFFFF) die("pointer address out of range (0..65535)");
                 address = (unsigned int)value;
             }
-            add_pointer_symbol(name, address);
+            add_pointer_symbol(name, address, has_origin, origin);
+            if (has_origin && tok.kind == T_COMMA)
+                die("__at declarations may define only one global object");
             if (tok.kind != T_COMMA) break;
             advance();
             continue;
@@ -997,7 +1056,9 @@ static void parse_global_declaration(void) {
             if (value < 0 || value > 255) die("byte initializer out of range (0..255)");
             initial_value = (int)value;
         }
-        add_symbol_array(name, initial_value, array_length, is_array);
+        add_symbol_array(name, initial_value, array_length, is_array, has_origin, origin);
+        if (has_origin && tok.kind == T_COMMA)
+            die("__at declarations may define only one global object");
         if (tok.kind != T_COMMA) break;
         advance();
     } while (1);
@@ -1028,7 +1089,7 @@ static int parse_return_type(void) {
     return 0;
 }
 
-static void parse_function(void) {
+static void parse_function(int has_origin, int origin) {
     int returns_value = parse_return_type();
     if (tok.kind != T_IDENT) die("expected function name");
     char name[64], label[72];
@@ -1074,17 +1135,21 @@ static void parse_function(void) {
         }
     }
     if (tok.kind == T_SEMI) {
+        if (has_origin) die("__at applies to a function definition, not its prototype");
         advance();
         return;
     }
     if (function->defined) die("duplicate function definition");
     function->defined = 1;
     snprintf(current_function, sizeof current_function, "%s", name);
+    enter_scope();
     for (size_t i = 0; i < param_count; i++)
         add_parameter_symbol(param_names[i], function->param_labels[i]);
+    if (has_origin) emit_origin(origin);
     emit_function_label(label, name);
-    parse_block();
+    parse_block_contents();
     emit_op(OP_RTS, M_IMP, 0);
+    leave_scope();
     current_function[0] = '\0';
 }
 
@@ -1123,6 +1188,10 @@ void compile(const char *source) {
     emit_source_comments(source);
     symbol_count = slot_count = function_count = 0;
     loop_depth = 0;
+    scope_count = 1;
+    current_scope = 0;
+    scopes[0].parent = -1;
+    scopes[0].symbol_start = 0;
     label_counter = temp_counter = symbol_counter = 0;
     array_counter = 0;
     pointer_counter = 0;
@@ -1135,16 +1204,29 @@ void compile(const char *source) {
     emit_op_label(OP_JMP, "halt");
 
     while (tok.kind != T_EOF) {
+        int has_origin = 0;
+        int origin = 0;
+        if (tok.kind == T_IDENT && !strcmp(tok.text, "__at")) {
+            advance();
+            expect(T_LPAREN, "'('");
+            long value = parse_const();
+            if (value < 0 || value > 0xFFFF) die("__at address out of range (0..65535)");
+            origin = (int)value;
+            has_origin = 1;
+            expect(T_RPAREN, "')'");
+        }
         if (tok.kind == T_VOID || tok.kind == T_CHAR || tok.kind == T_INT ||
             tok.kind == T_UNSIGNED) {
-            if (looks_like_function()) parse_function();
-            else if (tok.kind != T_VOID) parse_global_declaration();
+            if (looks_like_function()) parse_function(has_origin, origin);
+            else if (tok.kind != T_VOID) parse_global_declaration(has_origin, origin);
             else die("expected function declaration");
         }
         else
             die("expected function or global variable declaration");
     }
-    for (size_t i = 0; i < slot_count; i++)
+    for (size_t i = 0; i < slot_count; i++) {
+        if (slots[i].has_origin) emit_origin(slots[i].origin);
         emit_data_byte(slots[i].label, slots[i].value);
+    }
     emit_optimize();
 }

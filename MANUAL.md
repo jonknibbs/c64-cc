@@ -34,6 +34,14 @@ Write an assembly listing as well:
 .\build\c64cc.exe examples\border.c -o build\border.prg -S build\border.asm
 ```
 
+Quoted headers are expanded from the including file's directory first, then from each `-I` directory:
+
+```powershell
+.\build\c64cc.exe examples\c64_library.c -I include -o build\c64_library.prg
+```
+
+`#pragma once` prevents repeated expansion. Numeric object-like definitions such as `#define SCREEN 0x0400` are supported. Function-like macros, angle-bracket includes, and conditional preprocessing are not supported.
+
 Compile and launch in VICE:
 
 ```powershell
@@ -127,6 +135,10 @@ The `peek(address)` and `poke(address, value)` helpers access a constant address
 
 ## 8. C64 Helpers
 
+The common built-in declarations are in [include/c64.h](include/c64.h). Include it with `#include "c64.h"` and pass `-I include` when compiling from elsewhere. The compiler implements these calls directly; the header provides declarations, not separate runtime code. The `print` helper remains available as a compiler built-in but is not declared in this header.
+
+The header also defines useful addresses, including `C64_SCREEN_RAM`, `C64_COLOR_RAM`, `C64_BORDER_COLOR`, `C64_BACKGROUND_COLOR`, `C64_VIC_RASTER`, `C64_VIC_SPRITE_ENABLE`, `C64_VIC_SPRITE_POINTERS`, `C64_SPRITE_BITMAP`, `C64_SID_BASE`, and the CIA base addresses.
+
 | Helper | Behavior |
 |---|---|
 | `set_border(value)` | Write a byte to VIC-II border color register `$D020` |
@@ -135,6 +147,23 @@ The `peek(address)` and `poke(address, value)` helpers access a constant address
 | `print(address, "text")` | Write supported characters to screen memory as C64 screen codes |
 
 `print` maps letters to screen codes 1 through 26. Other accepted characters use their byte values for codes 32 through 63. For other hardware access, use `peek`, `poke`, or a pointer.
+
+### Sprites
+
+The sprite helpers select sprite numbers as compile-time constants from 0 through 7:
+
+| Helper | Behavior |
+|---|---|
+| `sprite_enable(sprite, enabled)` | Set or clear the sprite's bit in `$D015` |
+| `sprite_position(sprite, x, y)` | Write the low 8 bits of X and the Y coordinate |
+| `sprite_x_msb(sprite, enabled)` | Set or clear the ninth X-coordinate bit in `$D010` |
+| `sprite_color(sprite, color)` | Set the sprite's individual color |
+| `sprite_multicolor(sprite, enabled)` | Set or clear the sprite's multicolor bit in `$D01C` |
+| `sprite_pointer(sprite, pointer)` | Write the bitmap pointer in the default screen's pointer table at `$07F8` |
+| `sprite_bitmap_clear()` | Clear 63 bitmap bytes beginning at `$2000` |
+| `sprite_bitmap_write(offset, value)` | Write a byte at `$2000 + offset` using indexed addressing; keep offset in 0..62 |
+
+The bitmap helpers assume VIC-II bank 0 and bitmap storage at `$2000`; `sprite_pointer(0, 0x80)` selects that address because each bitmap occupies 64 bytes. A sprite bitmap uses 63 bytes, with the final byte reserved. For X positions above 255, set the low coordinate with `sprite_position` and control its high bit separately with `sprite_x_msb`. See [examples/sprites.c](examples/sprites.c) for a complete moving sprite setup.
 
 ## 9. Output and Tests
 
@@ -150,4 +179,4 @@ The [examples](examples) directory contains focused programs for expressions, fu
 
 ## 10. Current Boundaries
 
-This is a subset of C. It does not implement a preprocessor or `#include`, local stack frames, recursion, signed arithmetic, 16-bit integer arithmetic, pointer arithmetic, dynamic addresses for `peek`/`poke`, array initialization, or runtime array bounds checks. Unsupported syntax is reported as a compile error.
+This is a subset of C. It does not implement a general preprocessor, local stack frames, recursion, signed arithmetic, 16-bit integer arithmetic, pointer arithmetic, dynamic addresses for `peek`/`poke`, array initialization, or runtime array bounds checks. Preprocessing is limited to quoted `#include`, `#pragma once`, and numeric object-like `#define`. Unsupported syntax is reported as a compile error.

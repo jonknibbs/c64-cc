@@ -19,12 +19,13 @@ This produces `build/c64cc` (`build\c64cc.exe` on Windows).
 ## Usage
 
 ```
-c64cc input.c [-o out.prg] [-S out.asm] [--run] [--vice path]
+c64cc input.c [-I dir] [-o out.prg] [-S out.asm] [--run] [--vice path]
 ```
 
 | Option | Description |
 |---|---|
 | `input.c` | Source file to compile |
+| `-I dir` | Add a directory to quoted-header search paths |
 | `-o out.prg` | Output program (default: `out.prg`) |
 | `-S out.asm` | Also write a readable assembly listing |
 | `--run` | Launch the generated program in VICE after compiling |
@@ -58,8 +59,11 @@ Or load it in the emulator with `LOAD "BORDER.PRG",8,1` and `RUN`. On real hardw
 - Calls to user functions with byte arguments and returns; write prototypes before calls that pass arguments or use return values
 - `poke(constant_address, expression)` and `peek(constant_address)`
 - C64 helpers `set_border(expression)`, `set_background(expression)`, and `key()` (KERNAL `GETIN`)
+- Sprite helpers for enabling, positioning, coloring, selecting bitmap pointers, and writing bitmap data
+- Numeric object-like `#define` constants in included headers; `include/c64.h` names common VIC-II, screen, SID, and CIA locations
 - `print(constant_address, "text")` writes supported characters as C64 screen codes
 - `//` and `/* */` comments
+- Quoted `#include "header.h"` and `#pragma once` for reusable declarations
 - `c64cc --help` and `c64cc --version` for command-line discovery
 - Constant arithmetic and bitwise expressions are folded before output when the emitted pattern is safe to simplify
 
@@ -86,6 +90,8 @@ ctest --test-dir build --output-on-failure
 | [examples/input.c](examples/input.c) | KERNAL keyboard polling and VIC-II color helpers |
 | [examples/pointers.c](examples/pointers.c) | Pointer reads/writes to C64 memory-mapped and screen memory |
 | [examples/optimization.c](examples/optimization.c) | Constant-folded byte expressions |
+| [examples/c64_library.c](examples/c64_library.c) | Reusable built-in declarations from `include/c64.h` |
+| [examples/sprites.c](examples/sprites.c) | VIC-II sprite bitmap setup and movement |
 
 ```c
 // Turns the C64 border red, then loops forever.
